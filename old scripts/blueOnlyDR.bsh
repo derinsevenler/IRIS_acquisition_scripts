@@ -1,0 +1,171 @@
+// Blue only Dead-reckoning scan
+// It scans the same XY region each time - 5x5mm.
+
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.enableLiveMode(false);
+gui.closeAllAcquisitions();
+
+
+
+// file locations
+rootDirName = "C:/IRISdata/Derin/test" + chipNumber;
+
+
+// hard-coded stage positions
+startX = 9000.0;
+startY = 3000.0;
+bottomLeftZ = 12826.667;
+bottomRightZ = 12819.526;
+topLeftZ = 12847.335;
+topRightZ = 12827.192;
+
+// set how big of an area you wish to scan, in **millimeters**
+fieldSizemmX = 5.0;
+fieldSizemmY = 3.0;
+
+newPct = 1; // 20% of width overlap with EACH neighboring image
+stepSizeY = 1242.14*newPct; // field-of-view for 10x objective in um
+stepSizeX = 995.17*newPct;
+
+nPosX = Math.ceil(fieldSizemmX*1000.0 / stepSizeX);
+nPosY = Math.ceil(fieldSizemmY*1000.0 / stepSizeY);
+chipNumber = 1; // this changes the save directory and filename
+
+
+mmc.setExposure(2.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+width = (int) mmc.getImageWidth();
+height = (int) mmc.getImageHeight();
+bytesPerPixel = (int) mmc.getBytesPerPixel();
+bitDepth = (int) mmc.getImageBitDepth();
+
+nrRepeats = 2;
+
+nrFrames = 4; // Number of frames to average
+nrChannels = nrSlices = nrPositions = 1; // acquisition parameters
+
+
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move to the correct column - starting near x=0
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	// Calculate the start and end Z for this column of spots
+	relativeX = (idx*stepSizeX)/(fieldSizemmX*1000);
+	colStartZ = topLeftZ + relativeX*(topRightZ-bottomLeftZ);
+	colEndZ = bottomLeftZ + relativeX*(bottomRightZ-bottomLeftZ);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move down the column - starting at y=max
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + (nPosY-1-idy)*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Y Position " + (idy+1) + " of " + nPosY);
+
+		// Calculate and move to corresponding Z position
+		relativeY = (idy*stepSizeY)/(fieldSizemmY*1000);
+		zPos = colStartZ + relativeY*(colEndZ- colStartZ);
+		gui.message("Position " + relativeX + "  " + relativeY);
+		mmc.setFocusDevice("ZAxis");
+		mmc.setPosition(zPos);
+
+
+
+
+		// AT THIS POSITION... (copied from positions.bsh)
+
+		ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+		for(int c=0; c<channels.length; c++){
+			mmc.setConfig("LEDs", "_Off");
+			gui.sleep(10);
+			mmc.setConfig("LEDs", channels[c]);
+		
+		
+		// create a stack for this channel
+			ImageStack repeatStack = new ImageStack((int)width, (int)height, nrRepeats);
+			for(int n = 0; n<nrRepeats; n++){
+		
+				// create an acquisition of nrFrames
+				acqName = gui.getUniqueAcquisitionName("raw");
+				gui.openAcquisition(acqName, rootDirName,
+			   nrFrames, nrChannels, nrSlices, nrPositions,
+			   /* show */ true,
+			   /* save */ false);
+				// gui.initializeAcquisition(acqName, width, height, bytesPerPixel, bitDepth);
+				mmc.startSequenceAcquisition(nrFrames, 0, true);
+				frame = 0;
+				exposureMs = mmc.getExposure();
+				while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+				   if (mmc.getRemainingImageCount() > 0) {
+				      img = mmc.popNextTaggedImage();
+				      gui.addImageToAcquisition(acqName, frame, 0, 0, 0, img);
+				      frame++;
+				      gui.message(""+frame);
+				   }
+				   else {
+				      mmc.sleep(2);
+				   }
+				   if (frame>=nrFrames){
+				   	mmc.stopSequenceAcquisition();
+				   }
+				}
+				mmc.stopSequenceAcquisition();
+			
+				// get the average frame and save it out.
+				IJ.run("Z Project...", "start=0 stop=" + nrFrames + " projection=[Average Intensity]");
+				pause(10);
+				avgFr = IJ.getImage(); // this is an ImagePlus object
+			
+				thisFr = avgFr.getProcessor().getPixels();
+				repeatStack.setPixels(thisFr, n+1);
+		
+				gui.getAcquisition(acqName).promptToSave(false);
+				gui.closeAcquisitionWindow(acqName);
+				avgFr.close();
+			}
+		
+			
+		//	average the repeat stack
+			repeatIms = new ImagePlus("repeatImages", repeatStack);
+			repeatIms.show();
+			IJ.run("Z Project...", "start=0 stop=" + nrRepeats + " projection=[Average Intensity]");
+			totalAvg = IJ.getImage();
+			repeatIms.close();
+			colorStack.setPixels(totalAvg.getProcessor().getPixels(), c+1);
+			totalAvg.close();
+		
+		}
+		ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+		colorIms.show();
+
+		// perform mirror normalization
+		mir = IJ.openImage("C:/IRISData/Derin/March30Mirror.tif");
+		ic = new ImageCalculator(); //http://rsb.info.nih.gov/ij/developer/source/ij/plugin/ImageCalculator.java.html
+		normedStack = ic.run("Divide create 32-bit stack", colorIms, mir);
+		normedStack.show();
+		colorIms.close();
+		converter = new ImageConverter(normedStack);
+		converter.setDoScaling(false);
+		converter.convertToGray16();
+
+		
+		saveName = rootDirName + "/chip" + chipNumber + "_" + idx + "_" + idy + ".tif";
+		IJ.save(normedStack, saveName);
+		normedStack.close();
+	}
+}

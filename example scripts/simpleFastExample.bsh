@@ -1,0 +1,79 @@
+// this example script acquires 'nFrames' images, using the faster method.
+// This script averages the frames and shows the resulting averaged frame.
+// This script does not save the resulting images or 
+
+// FOR UNKNOWN REASONS THE FAST METHOD ONLY WORKS FOR EXPOSURE TIMES 1ms OR LESS.
+
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.process.ImageConverter;
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.closeAllAcquisitions();
+
+mmc.setExposure(3);
+
+// file locations
+rootDirName = "C:/IRISdata/Derin";
+
+width = (int) mmc.getImageWidth();
+height = (int) mmc.getImageHeight();
+bytesPerPixel = (int) mmc.getBytesPerPixel();
+bitDepth = (int) mmc.getImageBitDepth();
+
+// file locations
+
+// Number of frames to average
+numFrames = 16;
+numRepeats = 6; // number of repeat averages: total number of frames = nrFrames * nrRepeats
+
+// Acquire several images and average them
+now = System.currentTimeMillis();
+
+// Create a master-stack
+ImageStack metaStack = new ImageStack((int)width, (int)height, numRepeats);
+for (int k=0; k< numRepeats; k++)  {
+	// Create a mini-stack
+	miniStack = gui.getUniqueAcquisitionName("raw");
+	gui.openAcquisition(miniStack, rootDirName, numFrames, 1, 1, 1);
+	mmc.startSequenceAcquisition(numFrames, 200, true); //numImages, intervalMs, stopOnOverflow
+	frame = 0;
+	while(frame<numFrames) {
+		if (mmc.getRemainingImageCount() > 0) {
+			img = mmc.popNextTaggedImage();
+			gui.addImageToAcquisition(miniStack, frame, 0, 0, 0, img);
+			frame = frame+1;
+		}
+		else {
+			mmc.sleep(3);
+		}
+	}
+	mmc.stopSequenceAcquisition();
+	mmc.clearCircularBuffer();
+
+	// Average the mini-stack...
+	IJ.run("Z Project...", "start=0 stop=" + numFrames + " projection=[Median]");
+	miniAvg = IJ.getImage(); // this is an ImagePlus object
+
+	// ... and add it to the meta-stack
+	metaStack.setPixels(miniAvg.getProcessor().getPixels(), k+1);
+
+	// close the mini-stack and mini-average
+	gui.getAcquisition(miniStack).promptToSave(false);
+	gui.closeAcquisitionWindow(miniStack);
+	miniAvg.close();
+}
+
+// average the meta-stack.
+metaSlices = new ImagePlus("repeatImages", metaStack);
+metaSlices.show();
+IJ.run("Z Project...", "start=0 stop=" + numRepeats + " projection=[Median]");
+totalAvg = IJ.getImage();
+metaSlices.close();
+totalAvg.show();
+
+itTook = System.currentTimeMillis() - now;
+gui.message("Acquisition of " + numFrames*numRepeats + " frames took " + itTook/1000 + " seconds");

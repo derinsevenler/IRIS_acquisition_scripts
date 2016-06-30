@@ -1,0 +1,170 @@
+// this example script acquires 'nFrames' images at each color, using the faster method.
+// This script averages the frames and shows the resulting averaged frame.
+// THIS EXAMPLE DOES NOT WORK RIGHT NOW.
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.process.ImageConverter;
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.closeAllAcquisitions();
+
+mmc.setExposure(2.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+
+width = (int) mmc.getImageWidth();
+height = (int) mmc.getImageHeight();
+bytesPerPixel = (int) mmc.getBytesPerPixel();
+bitDepth = (int) mmc.getImageBitDepth();
+
+// file locations
+rootDirName = "C:/IRISdata/Derin";
+
+// Number of frames to average
+numFrames = 4;
+numRepeats = 1; // number of repeat averages: total number of frames = nrFrames * nrRepeats
+
+ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+for(int c=0; c<channels.length; c++){
+	mmc.setConfig("LEDs", ".Off");
+	gui.sleep(10);
+	mmc.setConfig("LEDs", channels[c]);
+	gui.sleep(10);
+
+	// Acquire several images and average them
+
+	for (int k=0; k< numRepeats; k++)  {
+		now = System.currentTimeMillis();
+		reStart = System.currentTimeMillis();
+		acqName = gui.getUniqueAcquisitionName("raw");
+		gui.openAcquisition(acqName, rootDirName, numFrames, 1, 1, 1);
+		mmc.startSequenceAcquisition(numFrames, 200, true); //numImages, intervalMs, stopOnOverflow
+		frame = 0;
+		while(frame<numFrames) {
+			if (mmc.getRemainingImageCount() > 0) {
+				img = mmc.popNextTaggedImage();
+				gui.addImageToAcquisition(acqName, frame, 0, 0, 0, img);
+				frame = frame+1;
+			}
+			else {
+				mmc.sleep(100);
+			}
+		}
+		mmc.stopSequenceAcquisition();
+		mmc.clearCircularBuffer();
+		gui.closeAllAcquisitions();
+		pause(1000);
+		gui.closeAcquisitionWindow(acqName);
+		itTook = System.currentTimeMillis() - now;
+		gui.message("It took " + itTook);
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// 	// create a stack
+// 	ImageStack repeatStack = new ImageStack((int)width, (int)height, nrRepeats);
+// 	for(int n = 0; n<nrRepeats; n++){
+
+// 		// create an acquisition of nrFrames
+// 		acqName = gui.getUniqueAcquisitionName("raw");
+// 		gui.openAcquisition(acqName, rootDirName,
+// 	   nrFrames, nrChannels, nrSlices, nrPositions,
+// 	   /* show */ true,
+// 	   /* save */ false);
+// 	//   gui.initializeAcquisition(acqName, width, height, bytesPerPixel, bitDepth);
+// 		mmc.startSequenceAcquisition(nrFrames, 0, true);
+// 		frame = 0;
+// 		exposureMs = mmc.getExposure();
+// 		while (mmc.getRemainingImageCount() > 0 || mmc.isSequenceRunning(mmc.getCameraDevice())) {
+// 		   if (mmc.getRemainingImageCount() > 0) {
+// 		      img = mmc.popNextTaggedImage();
+// 		      gui.addImageToAcquisition(acqName, frame, 0, 0, 0, img);
+// 		      frame++;
+// 	//	      gui.message(""+frame);
+// 		   }
+// 		   else {
+// 		      mmc.sleep(10);
+// 		   }
+// 		   if (frame>=nrFrames){
+// 		   	mmc.stopSequenceAcquisition();
+// 		   }
+// 		}
+// 		mmc.stopSequenceAcquisition();
+	
+// 		// get the average frame and save it out.
+// 		IJ.run("Z Project...", "start=0 stop=" + nrFrames + " projection=[Average Intensity]");
+// 		avgFr = IJ.getImage(); // this is an ImagePlus object
+	
+// 		thisFr = avgFr.getProcessor().getPixels();
+// 		repeatStack.setPixels(thisFr, n+1);
+
+// 		gui.getAcquisition(acqName).promptToSave(false);
+// 		gui.closeAcquisitionWindow(acqName);
+// 		avgFr.close();
+// 		mmc.sleep(3000);
+// 	}
+
+	
+// //	average the repeat stack
+// 	repeatIms = new ImagePlus("repeatImages", repeatStack);
+// 	repeatIms.show();
+// 	IJ.run("Z Project...", "start=0 stop=" + nrRepeats + " projection=[Average Intensity]");
+// 	totalAvg = IJ.getImage();
+// 	repeatIms.close();
+// 	colorStack.setPixels(totalAvg.getProcessor().getPixels(), c+1);
+// 	totalAvg.close();
+// }
+// ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+// colorIms.show();
+
+// // perform mirror normalization
+// mir = IJ.openImage("C:/IRISData/March31mirror/MED_March31mirror.tif");
+// ic = new ImageCalculator(); //http://rsb.info.nih.gov/ij/developer/source/ij/plugin/ImageCalculator.java.html
+// normedStack = ic.run("Divide create 32-bit stack", colorIms, mir);
+// //		normedStack.show();
+// IJ.run(normedStack, "Multiply...", "value=30000 stack");
+// converter = new ImageConverter(normedStack);
+// converter.setDoScaling(false);
+// converter.convertToGray16();
+// saveName = rootDirName + "/chip" + chipNumber + "_" + idx + "_" + idy + ".tif";
+// IJ.save(normedStack, saveName);
+// //		normedStack.close();
+// //IJ.save(rootDirName + "/fourColor.tif");
+// colorIms.close();
+
+// gui.message("Finished!");
+// mmc.setConfig("LEDs",".Off");

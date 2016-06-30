@@ -1,0 +1,84 @@
+// This uses the slow method to save 10 frames at 16 positions each.
+// The user should get in focus at a good place for taking a mirror measurement.
+// This script does not change the focus when it moves.
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+
+mmc.setExposure(1.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+
+width = mmc.getImageWidth();
+height = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.enableLiveMode(false);
+gui.closeAllAcquisitions();
+
+rootDirName = "C:/raw_data/mirror_files/"
+nFrames = 10;
+nPosX = 4;
+nPosY = 4;
+stepSizeX = 50;
+stepSizeY = 50;
+startX = mmc.getPosition("XAxis");
+startY = mmc.getPosition("YAxis");
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move to the correct column - starting near x=0
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move down the column - starting at y=max
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + (nPosY-1-idy)*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Y Position " + (idy+1) + " of " + nPosY);
+
+		// AT THIS POSITION... (slow method used in slowMethodExample.bsh)
+		ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+		for(int c=0; c<channels.length; c++){
+			mmc.setConfig("LEDs", ".Off");
+			gui.sleep(10);
+			mmc.setConfig("LEDs", channels[c]);
+			ImageStack stack = new ImageStack((int)width, (int)height, nFrames);
+			for(int n=0;n<nFrames;n++){
+				gui.message("Snapping image " + (n+1) );
+				mmc.snapImage();
+				img = mmc.getImage();
+				stack.setPixels(img, n+1);
+			}
+			ImagePlus acqIm = new ImagePlus("tempStack"+c, stack);
+			acqIm.show();
+			IJ.run("Z Project...", "start=0 stop=" + nFrames + " projection=[Average Intensity]");
+			avgFr = IJ.getImage(); // this is an ImagePlus object
+
+			colorStack.setPixels(avgFr.getProcessor().getPixels(), c+1);
+
+			acqIm.close();
+			avgFr.close();
+		}
+		ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+		colorIms.show();
+
+		
+		saveName = rootDirName + "/mirror" + chipNumber + "_" + idx + "_" + idy + ".tif";
+		IJ.save(normedStack, saveName);
+		normedStack.close();
+	}
+}

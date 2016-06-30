@@ -1,0 +1,131 @@
+// Blue only Dead-reckoning scan
+// It scans the same XY region each time - 5x5mm.
+
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.enableLiveMode(false);
+gui.closeAllAcquisitions();
+
+// file locations
+rootDirName = "C:/IRISdata/Derin/test" + chipNumber;
+
+// hard-coded stage positions
+startX = 9000.0;
+startY = 3000.0;
+bottomLeftZ = 12826.667;
+bottomRightZ = 12819.526;
+topLeftZ = 12847.335;
+topRightZ = 12827.192;
+
+// set how big of an area you wish to scan, in **millimeters**
+fieldSizemmX = 5.0;
+fieldSizemmY = 3.0;
+
+newPct = 1; // 20% of width overlap with EACH neighboring image
+stepSizeY = 1242.14*newPct; // field-of-view for 10x objective in um
+stepSizeX = 995.17*newPct;
+
+nPosX = Math.ceil(fieldSizemmX*1000.0 / stepSizeX);
+nPosY = Math.ceil(fieldSizemmY*1000.0 / stepSizeY);
+chipNumber = 1; // this changes the save directory and filename
+
+
+mmc.setExposure(2.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+width = (int) mmc.getImageWidth();
+height = (int) mmc.getImageHeight();
+bytesPerPixel = (int) mmc.getBytesPerPixel();
+bitDepth = (int) mmc.getImageBitDepth();
+
+nFrames =15;
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move to the correct column - starting near x=0
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	// Calculate the start and end Z for this column of spots
+	relativeX = (idx*stepSizeX)/(fieldSizemmX*1000);
+	colStartZ = topLeftZ + relativeX*(topRightZ-bottomLeftZ);
+	colEndZ = bottomLeftZ + relativeX*(bottomRightZ-bottomLeftZ);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move down the column - starting at y=max
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + (nPosY-1-idy)*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Y Position " + (idy+1) + " of " + nPosY);
+
+		// Calculate and move to corresponding Z position
+		relativeY = (idy*stepSizeY)/(fieldSizemmY*1000);
+		zPos = colStartZ + relativeY*(colEndZ- colStartZ);
+		gui.message("Position " + relativeX + "  " + relativeY);
+		mmc.setFocusDevice("ZAxis");
+		mmc.setPosition(zPos);
+
+
+
+
+		// AT THIS POSITION... (copied from positions.bsh)
+		ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+		for(int c=0; c<channels.length; c++){
+			mmc.setConfig("LEDs", "_Off");
+			gui.sleep(10);
+			mmc.setConfig("LEDs", channels[c]);
+			ImageStack stack = new ImageStack((int)width, (int)height, nFrames);
+			for(int n=0;n<nFrames;n++){
+				gui.message("Snapping: " + (n+1) );
+				mmc.snapImage();
+				gui.message("Getting: " + (n+1) );
+				img = mmc.getImage();
+				gui.message("Setting: " + (n+1) );
+				stack.setPixels(img, n+1);
+			}
+			ImagePlus acqIm = new ImagePlus("tempStack"+c, stack);
+			acqIm.show();
+			IJ.run("Z Project...", "start=0 stop=" + nFrames + " projection=[Average Intensity]");
+			avgFr = IJ.getImage(); // this is an ImagePlus object
+
+			colorStack.setPixels(avgFr.getProcessor().getPixels(), c+1);
+
+			acqIm.close();
+			avgFr.close();
+		}
+		ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+
+		// perform mirror normalization
+		mir = IJ.openImage("C:/IRISData/March30mirror/March30Mirror.tif");
+		ic = new ImageCalculator(); //http://rsb.info.nih.gov/ij/developer/source/ij/plugin/ImageCalculator.java.html
+		colorIms.show();
+		mir.show();
+		normedStack = ic.run("divide create 32-bit stack", colorIms, mir);
+		IJ.run(normedStack, "Multiply...", "value=30000 stack");
+		mir.close();
+		colorIms.close();
+		normedStack.show();
+		converter = new ImageConverter(normedStack);
+		converter.setDoScaling(false);
+		converter.convertToGray16();
+
+		
+		saveName = rootDirName + "/chip" + chipNumber + "_" + idx + "_" + idy + ".tif";
+		IJ.save(normedStack, saveName);
+		normedStack.close();
+	}
+}

@@ -1,0 +1,79 @@
+import ij.*;
+import ij.plugin.ImageCalculator;
+
+
+gui.clearMessageWindow();
+// mmc.stopSequenceAcquisition();
+// mmc.clearCircularBuffer();
+// gui.enableLiveMode(false);
+// gui.closeAllAcquisitions();
+
+// Scan a region in the blue channel only
+// Instead of auto-focusing at every position, first get the focus at all four corners and interpolate.
+
+// ********
+// USER INPUT
+chipNumber = 1; // this changes the save directory and filename
+// SET SCAN AREA, in **millimeters**
+fieldSizemmX = 5.0;
+fieldSizemmY = 3.0;
+// FOCUS AT FOUR CORNERS HERE.
+// Move fieldSizemmX and fileSizemmY, get in focus, and put the z positions in microns
+botRightZ = 12885.2;
+botLeftZ = 12809.6;
+topRightZ = 12952.2;
+topLeftZ = 12871.7;
+
+// ********
+
+// FOV of 10x Objective of V1 instrument
+stepSizeY = 1242.14;
+stepSizeX = 995.17;
+
+nPosX = Math.ceil(fieldSizemmX*1000.0 / stepSizeX);
+nPosY = Math.ceil(fieldSizemmY*1000.0 / stepSizeY);
+
+startX = mmc.getPosition("XAxis");
+//gui.message(startX+ "");
+startY = mmc.getPosition("YAxis");
+//gui.message(startY+ "");
+
+// file locations
+rootDirName = "C:/IRISdata/Derin/chip" + chipNumber;
+
+
+// acquisition parameters
+nrRepeats = 2;
+nrFrames = 16; // nrFrames * nrRepeats = total number of averaged frames
+nrChannels = nrSlices = nrPositions = 1;
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move to X-position
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	// Calculate the start and end Z for this row
+	relativeX = (idx*stepSizeX)/(fieldSizemmX*1000);
+	rowStartZ = botRightZ + relativeX*(botLeftZ-botRightZ);
+	rowEndZ = topRightZ + relativeX*(topLeftZ-topRightZ);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move to Y-position
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + idy*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Y Position " + (idy+1) + " of " + nPosY);
+
+		// Calculate and move to corresponding Z position
+		relativeY = (idy*stepSizeY)/(fieldSizemmY*1000);
+		zPos = rowStartZ + relativeY*(rowEndZ- rowStartZ);
+		gui.message("Z Position " + relativeX + "  " + relativeY);
+		mmc.setFocusDevice("ZAxis");
+		mmc.setPosition(zPos);
+
+		gui.sleep(1000); // test visually
+	}
+}

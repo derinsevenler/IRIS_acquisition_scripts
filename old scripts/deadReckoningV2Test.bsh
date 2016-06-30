@@ -1,0 +1,117 @@
+// DeadReckoning v2 test
+// Scanning starts in the top-left corner of the chip, and moves column-wise.
+// E.g., just like spotting! This reference is with respect to the USER POV and the STAGES, not the camera
+// or saved images.
+// HOWEVER, this is configured so that the X and Y axes are aligned with cartesian reference:
+// Moving the stages to (0,0) moves to the bottom-left corner of the chip, and 
+//Incrementing X-axis should move the sample leftwards.
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+
+
+gui.clearMessageWindow();
+// mmc.stopSequenceAcquisition();
+// mmc.clearCircularBuffer();
+// gui.enableLiveMode(false);
+// gui.closeAllAcquisitions();
+
+// Scan a region in the blue channel only
+// Instead of auto-focusing at every position, first get the focus at all four corners and interpolate.
+
+// ********
+// USER INPUT
+chipNumber = 1; // this changes the save directory and filename
+// SET SCAN AREA, in **millimeters**
+fieldSizemmX = 2.0;
+fieldSizemmY = 2.0;
+
+// ********
+
+// FOV of 10x Objective of V1 instrument
+stepSizeX = 1242.14;
+stepSizeY = 995.17;
+
+nPosX = Math.ceil(fieldSizemmX*1000.0 / stepSizeX);
+nPosY = Math.ceil(fieldSizemmY*1000.0 / stepSizeY);
+
+startX = mmc.getPosition("XAxis");
+gui.message(startX+ "");
+startY = mmc.getPosition("YAxis");
+gui.message(startY+ "");
+
+// file locations
+rootDirName = "C:/IRISdata/Derin/chip" + chipNumber;
+
+// Focus at each of the four corners.
+//BottomLeft Corner - (0,0) - WE SHOULD BE THERE ALREADY!
+mmc.setFocusDevice("ZAxis");
+af = gui.getAutofocus();
+af.fullFocus();
+bottomLeftZ = mmc.getPosition();
+gui.message("Bottom left focus at " + bottomLeftZ + "");
+
+//bottomRight Corner - (max,0)
+mmc.setFocusDevice("XAxis");
+mmc.setPosition(startX+fieldSizemmX*1000.0);
+mmc.setFocusDevice("YAxis");
+mmc.setPosition(startY);
+mmc.setFocusDevice("ZAxis");
+af = gui.getAutofocus();
+af.fullFocus();
+bottomRightZ = mmc.getPosition();
+gui.message("Bottom right focus at " + bottomRightZ + "");
+
+//topLeft Corner - (max,0)
+mmc.setFocusDevice("XAxis");
+mmc.setPosition(startX);
+mmc.setFocusDevice("YAxis");
+mmc.setPosition(startY+fieldSizemmY*1000.0);
+mmc.setFocusDevice("ZAxis");
+af = gui.getAutofocus();
+af.fullFocus();
+topLeftZ = mmc.getPosition();
+gui.message("Top left focus at " + topLeftZ + "");
+
+//topRight Corner - (max,max)
+mmc.setFocusDevice("XAxis");
+mmc.setPosition(startX+fieldSizemmX*1000.0);
+mmc.setFocusDevice("YAxis");
+mmc.setPosition(startY+fieldSizemmY*1000.0);
+mmc.setFocusDevice("ZAxis");
+af = gui.getAutofocus();
+af.fullFocus();
+topRightZ = mmc.getPosition();
+gui.message("Top right focus at " + topRightZ + "");
+
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move to X-position
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	// Calculate the start and end Z for this column of spots
+	relativeX = (idx*stepSizeX)/(fieldSizemmX*1000);
+	colStartZ = topLeftZ + relativeX*(topRightZ-bottomLeftZ);
+	colEndZ = bottomLeftZ + relativeX*(bottomRightZ-bottomLeftZ);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move to Y-position
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + idy*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Y Position " + (idy+1) + " of " + nPosY);
+
+		// Calculate and move to corresponding Z position
+		relativeY = (idy*stepSizeY)/(fieldSizemmY*1000);
+		zPos = colStartZ + relativeY*(colEndZ- colStartZ);
+		gui.message("Z Position " + relativeX + "  " + relativeY);
+		mmc.setFocusDevice("ZAxis");
+		mmc.setPosition(zPos);
+
+		gui.sleep(1000); // test visually
+	}
+}

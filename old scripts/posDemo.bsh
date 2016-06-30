@@ -1,0 +1,38 @@
+
+// first, the user needs to move to the bottom-right position -
+// -- both in the image and the chip.
+// In the IMAGE, the increasing X-axis moves sample DOWN, 
+// increasing Y-axis moves sample to the RIGHT
+
+//String[] stageLabels = new String[3];
+//stageLabels[0] = "XAxis";
+//stageLabels[1] = "YAxis";
+//stageLabels[2] = "ZAxis";
+
+nPosX = 5;
+nPosY = 5;
+
+stepSizeY = 1242.14; // field-of-view for 10x objective in um
+stepSizeX = 995.17;
+
+// get the current position in microns
+startX = mmc.getPosition("XAxis");
+//gui.message(startX+ "");
+startY = mmc.getPosition("YAxis");
+//gui.message(startY+ "");
+
+for(int idx = 0; idx<nPosX; idx++){
+	mmc.setFocusDevice("XAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	for(int idy = 0; idy<nPosY; idy++){
+		mmc.setFocusDevice("YAxis");
+		thisY = startY + idy*stepSizeY;
+		mmc.setPosition(thisY);
+
+		mmc.setFocusDevice("ZAxis");
+		af = gui.getAutoFocus();
+		gui.sleep(1000);
+	}
+}
+gui.message("Scan complete.");

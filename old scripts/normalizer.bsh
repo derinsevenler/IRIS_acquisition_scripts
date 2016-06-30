@@ -1,0 +1,21 @@
+import ij.*;
+//import java.io.*;
+//import ij.process.*;
+import ij.plugin.ImageCalculator;
+import ij.process.ImageConverter;
+//import ij.process.StackConverter;
+mir = IJ.openImage("C:/IRISData/mirror/March30MirrorBLue.tif");
+//mir.show();
+img = IJ.openImage("C:/IRISData/Derin/Chip 5- bad focusing/chip5_0_0.tif");
+//img.show();
+ic = new ImageCalculator(); //http://rsb.info.nih.gov/ij/developer/source/ij/plugin/ImageCalculator.java.html
+normed = ic.run("Divide create 32-bit", img, mir);
+//normed.show();
+IJ.run(normed, "Multiply...", "value=30000 stack");
+normed.show();
+
+converter = new ImageConverter(normed);
+converter.setDoScaling(false);
+converter.convertToGray16();
+normed.close();
+// rescale normed by multiplying by 2^15 and casting as uint16

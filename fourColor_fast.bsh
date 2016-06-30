@@ -1,0 +1,223 @@
+// Four-color region/tile scanning with the fast method.
+// Start in the top-left corner of the desired scan area, and get in focus.
+// Set the desired scan area in mm.
+// This function also performs mirror normalization.
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+
+import java.util.Date;
+import java.text.SimpleDateFormat;
+
+// The current date
+String today_date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+
+now = System.currentTimeMillis();
+
+//----------------------------------- EDIT YOUR PARAMETERS HERE -------------------------------
+// MAKE SURE YOU ARE AT THE TOP-LEFT CORNER OF YOUR DESIRED SCAN AREA.
+
+// Set the mirror file location - it should be a 4-color TIFF.
+mirrorFile = "C:/IRIS/mirror files/2016-06-29 mirror.tif";
+
+// these change the save directory and filename
+exptName = today_date + " fast acquisition test";
+chipNumber = 5;
+
+// set how big of an area you wish to scan, in **millimeters**
+fieldSizemmX = 2.0;
+fieldSizemmY = 2.0;
+
+exposureTime = 20.0; // you probably don't need to change this.
+
+//-----------------------------------------------------------------------------------------------
+
+mmc.setExposure(exposureTime);
+
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+
+width = mmc.getImageWidth();
+height = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.enableLiveMode(false);
+gui.closeAllAcquisitions();
+
+rootDirName = "C:/raw_data/"+ exptName + "/chip" + chipNumber + "/";
+File f = new File(rootDirName+"dummy");
+f.getParentFile().mkdirs();
+
+numRepeats = 2;
+numFrames = 8;
+
+gui.message("averaging " + (numFrames*numRepeats) + " frames at each color & position.");
+
+startX = mmc.getPosition("xAxis");
+startY = mmc.getPosition("yAxis");
+
+
+
+gui.message("Focusing in the four corners:");
+mmc.setConfig("LEDs", ".Off");
+gui.sleep(10);
+mmc.setConfig("LEDs", channels[1]);
+
+mmc.setFocusDevice("zAxis");
+af = gui.getAutofocus();
+
+gui.message("top-left");
+mmc.setFocusDevice("xAxis");
+mmc.setPosition(startX);
+mmc.setFocusDevice("yAxis");
+mmc.setPosition(startY);
+mmc.setFocusDevice("zAxis");
+af.fullFocus();
+topLeftZ = mmc.getPosition("zAxis"); // we should already be in focus here.
+
+gui.message("top-right");
+mmc.setFocusDevice("xAxis");
+mmc.setPosition(startX+1000.0*fieldSizemmX);
+mmc.setFocusDevice("yAxis");
+mmc.setPosition(startY);
+mmc.setFocusDevice("zAxis");
+af.fullFocus();
+topRightZ = mmc.getPosition("zAxis");
+
+gui.message("bottom-left");
+mmc.setFocusDevice("xAxis");
+mmc.setPosition(startX);
+mmc.setFocusDevice("yAxis");
+mmc.setPosition(startY-1000.0*fieldSizemmY);
+mmc.setFocusDevice("zAxis");
+af.fullFocus();
+bottomLeftZ = mmc.getPosition("zAxis");
+
+gui.message("bottom-right");
+mmc.setFocusDevice("xAxis");
+mmc.setPosition(startX+1000.0*fieldSizemmX);
+mmc.setFocusDevice("yAxis");
+mmc.setPosition(startY-1000.0*fieldSizemmY);
+mmc.setFocusDevice("zAxis");
+af.fullFocus();
+bottomRightZ = mmc.getPosition("zAxis");
+
+
+newPct = 1; // 20% of width overlap with EACH neighboring image
+stepSizeX = 1242.14*newPct; // field-of-view for 10x objective in um
+stepSizeY = 995.17*newPct;
+
+nPosX = Math.ceil(fieldSizemmX*1000.0 / stepSizeX);
+nPosY = Math.ceil(fieldSizemmY*1000.0 / stepSizeY);
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move decending column-wise, across left-to-right
+	mmc.setFocusDevice("xAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+
+	// Calculate the start and end Z for this column of spots
+	relativeX = (idx*stepSizeX)/(fieldSizemmX*1000);
+	colStartZ = topLeftZ + relativeX*(topRightZ-bottomLeftZ);
+	colEndZ = bottomLeftZ + relativeX*(bottomRightZ-bottomLeftZ);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move down the column - starting at y=max
+		mmc.setFocusDevice("yAxis");
+		thisY = startY -idy*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Position " + (idy+1+(nPosY*idx)) + " of " + (nPosY*nPosX));
+
+		// Calculate and move to corresponding Z position
+		relativeY = (idy*stepSizeY)/(fieldSizemmY*1000);
+		zPos = colStartZ + relativeY*(colEndZ- colStartZ);
+		mmc.setFocusDevice("zAxis");
+		mmc.setPosition(zPos);
+
+		ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+		for(int c=0; c<channels.length; c++){
+			gui.message("Scanning " + channels[c]);
+			
+			mmc.setConfig("LEDs", ".Off");
+			gui.sleep(10);
+			mmc.setConfig("LEDs", channels[c]);
+			
+			ImageStack metaStack = new ImageStack((int)width, (int)height, numRepeats);
+			for (int k=0; k< numRepeats; k++)  {
+				// Create a mini-stack
+				miniStack = gui.getUniqueAcquisitionName("raw");
+				gui.openAcquisition(miniStack, rootDirName, numFrames, 1, 1, 1);
+				mmc.startSequenceAcquisition(numFrames, 200, true); //numImages, intervalMs, stopOnOverflow
+				frame = 0;
+				while(frame<numFrames) {
+					if (mmc.getRemainingImageCount() > 0) {
+						img = mmc.popNextTaggedImage();
+						gui.addImageToAcquisition(miniStack, frame, 0, 0, 0, img);
+						frame = frame+1;
+					}
+					else {
+						mmc.sleep(3);
+					}
+				}
+				mmc.stopSequenceAcquisition();
+				mmc.clearCircularBuffer();
+
+				// Average the mini-stack...
+				IJ.run("Z Project...", "start=0 stop=" + numFrames + " projection=[Average Intensity]");
+				miniAvg = IJ.getImage(); // this is an ImagePlus object
+
+				// ... and add it to the meta-stack
+				metaStack.setPixels(miniAvg.getProcessor().getPixels(), k+1);
+
+				// close the mini-stack and mini-average
+				gui.getAcquisition(miniStack).promptToSave(false);
+				gui.closeAcquisitionWindow(miniStack);
+				miniAvg.close();
+			}
+
+			// average the meta-stack.
+			metaSlices = new ImagePlus("repeatImages", metaStack);
+			metaSlices.show();
+			IJ.run("Z Project...", "start=0 stop=" + numRepeats + " projection=[Average Intensity]");
+			totalAvg = IJ.getImage();
+			metaSlices.close();
+			totalAvg.show();
+			colorStack.setPixels(totalAvg.getProcessor().getPixels(), c+1);
+			totalAvg.close();
+		}
+		ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+		colorIms.show();
+
+		// perform mirror normalization
+		mir = IJ.openImage(mirrorFile);
+		ic = new ImageCalculator(); //http://rsb.info.nih.gov/ij/developer/source/ij/plugin/ImageCalculator.java.html
+		normedStack = ic.run("Divide create 32-bit stack", colorIms, mir);
+		//		normedStack.show();
+		IJ.run(normedStack, "Multiply...", "value=30000 stack");
+		converter = new ImageConverter(normedStack);
+		converter.setDoScaling(false);
+		converter.convertToGray16();
+		
+		// save the image
+		saveName = rootDirName + "chip" + chipNumber + "_" + idx + "_" + idy + ".tif";
+		IJ.save(normedStack, saveName);
+		//		normedStack.close();
+		colorIms.close();
+
+
+	}
+}
+gui.message("Scanning completed. Images are stored at " + rootDirName);
+itTook = System.currentTimeMillis() - now;
+gui.message("Acquisition of " + (nPosX*nPosY) + " fields took " + itTook/60000 + " minutes");

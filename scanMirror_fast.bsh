@@ -1,0 +1,126 @@
+// This uses the slow method to save 10 frames at 16 positions each.
+// The user should get in focus at a good place for taking a mirror measurement.
+// This script does not change the focus when it moves.
+// Start in the top-left corner of the desired scan area (total about 1,200x1,200um)
+
+import ij.*;
+import ij.plugin.ImageCalculator;
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+
+import java.util.Date;
+import java.text.SimpleDateFormat;
+
+// The current date
+String today_date = new SimpleDateFormat("yyyy-MM-dd").format(new Date());
+
+mmc.setExposure(20.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+
+width = mmc.getImageWidth();
+height = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+gui.clearMessageWindow();
+mmc.stopSequenceAcquisition();
+mmc.clearCircularBuffer();
+gui.enableLiveMode(false);
+gui.closeAllAcquisitions();
+
+// ---------------------------------------------
+rootDirName = "C:/raw_data/mirror_files/";
+numRepeats = 2;
+numFrames = 8;
+nPosX = 4;
+nPosY = 4;
+stepSizeX = 50;
+stepSizeY = 50;
+// ---------------------------------------------
+
+
+startX = mmc.getPosition("xAxis");
+startY = mmc.getPosition("yAxis");
+
+
+for(int idx = 0; idx<nPosX; idx++){
+	// Move decending column-wise, across left-to-right
+	mmc.setFocusDevice("xAxis");
+	thisX = startX + idx*stepSizeX;
+	mmc.setPosition(thisX);
+	gui.message("X Position " + (idx+1) + " of " + nPosX);
+
+	for(int idy = 0; idy<nPosY; idy++){
+		// Move down the column - starting at y=max
+		mmc.setFocusDevice("yAxis");
+		thisY = startY -idy*stepSizeY;
+		mmc.setPosition(thisY);
+		gui.message("Position " + (idy+1+(nPosY*idx)) + " of " + (nPosY*nPosX));
+
+		// AT THIS POSITION... (slow method used in slowMethodExample.bsh)
+		ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+		for(int c=0; c<channels.length; c++){
+			gui.message("Scanning " + channels[c]);
+			
+			mmc.setConfig("LEDs", ".Off");
+			gui.sleep(10);
+			mmc.setConfig("LEDs", channels[c]);
+			
+			ImageStack metaStack = new ImageStack((int)width, (int)height, numRepeats);
+			for (int k=0; k< numRepeats; k++)  {
+				// Create a mini-stack
+				miniStack = gui.getUniqueAcquisitionName("raw");
+				gui.openAcquisition(miniStack, rootDirName, numFrames, 1, 1, 1);
+				mmc.startSequenceAcquisition(numFrames, 200, true); //numImages, intervalMs, stopOnOverflow
+				frame = 0;
+				while(frame<numFrames) {
+					if (mmc.getRemainingImageCount() > 0) {
+						img = mmc.popNextTaggedImage();
+						gui.addImageToAcquisition(miniStack, frame, 0, 0, 0, img);
+						frame = frame+1;
+					}
+					else {
+						mmc.sleep(3);
+					}
+				}
+				mmc.stopSequenceAcquisition();
+				mmc.clearCircularBuffer();
+
+				// Average the mini-stack...
+				IJ.run("Z Project...", "start=0 stop=" + numFrames + " projection=[Average Intensity]");
+				miniAvg = IJ.getImage(); // this is an ImagePlus object
+
+				// ... and add it to the meta-stack
+				metaStack.setPixels(miniAvg.getProcessor().getPixels(), k+1);
+
+				// close the mini-stack and mini-average
+				gui.getAcquisition(miniStack).promptToSave(false);
+				gui.closeAcquisitionWindow(miniStack);
+				miniAvg.close();
+			}
+
+			// average the meta-stack.
+			metaSlices = new ImagePlus("repeatImages", metaStack);
+			metaSlices.show();
+			IJ.run("Z Project...", "start=0 stop=" + numRepeats + " projection=[Average Intensity]");
+			totalAvg = IJ.getImage();
+			metaSlices.close();
+			totalAvg.show();
+			colorStack.setPixels(totalAvg.getProcessor().getPixels(), c+1);
+			totalAvg.close();
+		}
+		ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+		colorIms.show();
+
+		
+		saveName = rootDirName + "" + today_date + " mirror" + "_" + idx + "_" + idy + ".tif";
+		IJ.save(colorIms, saveName);
+		colorIms.close();
+	}
+}
+gui.message("Mirror scan complete!");

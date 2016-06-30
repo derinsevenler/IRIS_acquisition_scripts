@@ -1,0 +1,63 @@
+// this example script acquires 'nFrames' images at each color, using the slow method.
+// This method is very slow, it takes about 1.5 seconds per frame.
+// This script averages the frames and shows the resulting averaged frame.
+
+import ij.*;
+import ij.gui.*;
+import ij.process.*;
+import ij.measure.*;
+
+gui.clearMessageWindow();
+
+mmc.setExposure(1.0);
+String[] channels = new String[4];
+channels[0] = "Blue";
+channels[1] = "Green";
+channels[2] = "Orange";
+channels[3] = "Red";
+
+width = mmc.getImageWidth();
+height = mmc.getImageHeight();
+bitDepth = mmc.getImageBitDepth();
+
+// Let's acquire multiple images and add them to a stack!
+nFrames = 30;
+ImageStack colorStack = new ImageStack((int)width, (int)height, channels.length);
+for(int c=0; c<channels.length; c++){
+	mmc.setConfig("LEDs", ".Off");
+	gui.sleep(10);
+	mmc.setConfig("LEDs", channels[c]);
+	ImageStack stack = new ImageStack((int)width, (int)height, nFrames);
+	for(int n=0;n<nFrames;n++){
+		gui.message("Snapping: " + (n+1) );
+		mmc.snapImage();
+		gui.message("Getting: " + (n+1) );
+		img = mmc.getImage();
+		gui.message("Setting: " + (n+1) );
+		stack.setPixels(img, n+1);
+	}
+	ImagePlus acqIm = new ImagePlus("tempStack"+c, stack);
+	acqIm.show();
+	IJ.run("Z Project...", "start=0 stop=" + nFrames + " projection=[Average Intensity]");
+	avgFr = IJ.getImage(); // this is an ImagePlus object
+
+	colorStack.setPixels(avgFr.getProcessor().getPixels(), c+1);
+
+	acqIm.close();
+	avgFr.close();
+}
+ImagePlus colorIms = new ImagePlus("colorImages", colorStack);
+colorIms.show();
+
+
+
+// Another way to do acquisition, just as slow though. It ends up in a micro-manager acquisition window.
+//gui.closeAllAcquisitions();
+//gui.openAcquisition("Acq2", "C:/ ", 4, 1,1);
+//for(int n=0; n<4; n++){
+////	mmc.initializeCircularBuffer();
+//	gui.snapAndAddImage("Acq2", n, 0, 0, 0);
+//}
+
+
+mmc.setConfig("LEDs",".Off");
